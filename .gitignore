@@ -1,0 +1,12 @@
+# Secrets — the database password lives here.
+.env
+
+# Uploaded CVs are personal data. They belong in a backup, not in git.
+data/
+
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+Thumbs.db

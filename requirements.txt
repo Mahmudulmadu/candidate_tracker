@@ -1,0 +1,43 @@
+# Pinned to versions that ship wheels for BOTH the development machine
+# (Python 3.13) and the office server (Ubuntu 26.04, Python 3.14). That
+# constraint is why these are not the versions the project started on: the
+# original pins predated 3.14, and pydantic-core 2.27.2 in particular has no
+# wheel for it, so the server could not build them at all.
+#
+# Upgrade with care and re-run the suite — `pytest` is what says whether a
+# newer FastAPI still behaves.
+
+# ── Web ──────────────────────────────────────────────────────────────
+fastapi==0.141.1
+starlette==1.7.0
+uvicorn[standard]==0.53.0
+python-multipart==0.0.32
+pydantic==2.13.5
+python-dotenv==1.2.3
+
+# ── PostgreSQL ───────────────────────────────────────────────────────
+# [binary] ships the libpq wheel, so nothing has to be compiled or installed
+# system-wide. [pool] adds a thread-safe connection pool, which the sync
+# FastAPI endpoints need because they are served from a thread pool.
+psycopg[binary,pool]==3.3.6
+
+# ── Tests ────────────────────────────────────────────────────────────
+# The database tests run against a real PostgreSQL server, in a scratch
+# database named <PG_DATABASE>_test that they create and truncate themselves.
+pytest==9.1.1
+# What FastAPI's TestClient is built on. Starlette 1.x moved from httpx to
+# httpx2 and does not pull it in itself, so tests/test_api.py cannot even be
+# collected without it.
+httpx2
+
+# ── CV text extraction ───────────────────────────────────────────────
+# PyMuPDF reads the embedded text layer of a PDF (fast, no native binary).
+PyMuPDF==1.28.2
+python-docx==1.2.0
+
+# ── OCR fallback (OPTIONAL) ──────────────────────────────────────────
+# Only needed for scanned / image-only CVs, where PyMuPDF finds no text
+# layer. ~250MB of ONNX models on first run. The app works without it and
+# degrades to "upload found no text — please type the contact fields".
+# Install with:  pip install rapidocr-onnxruntime
+# rapidocr-onnxruntime==1.4.4

@@ -1,0 +1,54 @@
+[Unit]
+Description=Interview Tracker — candidate history and duplicate detection
+Documentation=file:/opt/resume-filter/README.md
+# The app boots even when Postgres is down (it serves the page that says so),
+# but starting them in order means the usual case comes up clean.
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=exec
+User=resumefilter
+Group=resumefilter
+WorkingDirectory=/opt/resume-filter
+
+# Settings come from /opt/resume-filter/.env, which the app reads itself.
+# --proxy-headers so request logs show the real client, not nginx.
+ExecStart=/opt/resume-filter/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 \
+    --proxy-headers --forwarded-allow-ips 127.0.0.1
+
+Restart=always
+RestartSec=3
+# A database that is down is not a reason to give up permanently: without
+# this, five quick failures would leave the service stopped for good.
+StartLimitBurst=0
+
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=resume-filter
+
+# ── Hardening ────────────────────────────────────────────────────────
+# This process takes file uploads from a browser, so it gets as little of
+# the machine as it can be given and still work.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The only thing it may write to: uploaded CVs.
+ReadWritePaths=/var/lib/resume-filter
+
+[Install]
+WantedBy=multi-user.target
