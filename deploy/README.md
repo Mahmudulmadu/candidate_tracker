@@ -163,3 +163,4 @@ journalctl -u resume-filter -n 50 --no-pager
 | "Interview Tracker is starting" for more than a minute | that page is nginx's 502 handler — the service is not coming up, read the journal |
 | 413 on upload | a CV over 25MB; raise `client_max_body_size` **and** `MAX_CV_MB` |
 | Service restarting in a loop | usually a dependency that failed to build; `sudo -u resumefilter /opt/resume-filter/.venv/bin/python -c "import app.main"` shows the real error |
+| `install.sh` fails at once with `invalid option name` or `$'\r': command not found` | it arrived with Windows CRLF line endings. `.gitattributes` pins `*.sh` to LF so this should not happen from a checkout of this repo; `git ls-files --eol deploy/install.sh` should say `w/lf` |
