@@ -7,8 +7,13 @@ exists in the database. Each rung is tried in order and carries a confidence:
     1.00  email            a mailbox is one person
     0.95  LinkedIn slug    a profile is one person
     0.95  GitHub handle    ditto
-    0.85  phone            but ONLY when exactly one candidate holds it —
-                           shared desk phones and family numbers are real
+    0.85  phone            but ONLY when exactly one candidate holds that
+                           exact number — shared desk phones and family
+                           numbers are real
+    0.60  phone tail       same last 9 digits, different full number: a
+                           foreign number written once with its country code
+                           and once without — or two people in two countries
+    0.50  shared phone     the same number on several candidates
     0.40  name             never links on its own; surfaced for a human
 
 Above ``auto_link_min_confidence`` the new interview is filed against the
@@ -28,12 +33,14 @@ from typing import Any
 
 from app import store
 from app.config import settings
-from app.identity import NormalizedIdentity, normalize_identity
+from app.identity import NormalizedIdentity, normalize_identity, phone_match_key
 
 # ── Confidence per rung ──────────────────────────────────────────────
 CONF_EMAIL = 1.00
 CONF_PROFILE = 0.95
 CONF_PHONE = 0.85
+CONF_PHONE_TAIL = 0.60
+CONF_PHONE_SHARED = 0.50
 CONF_NAME = 0.40
 
 
@@ -105,18 +112,36 @@ def find_matches(identity: NormalizedIdentity) -> list[Match]:
               f"Same GitHub account — @{identity.github}")
 
     if identity.phone_key:
-        phone_rows = store.find_by_phone_key(identity.phone_key)
-        # A number held by two candidates is a shared line, not proof of
-        # identity. It still gets reported — just below the auto-link bar, so
-        # a person decides.
-        confidence = CONF_PHONE if len(phone_rows) == 1 else 0.50
-        detail = (
-            f"Same phone number — {identity.phone or identity.phone_key}"
-            if len(phone_rows) == 1
-            else f"Phone {identity.phone or identity.phone_key} is on "
-                 f"{len(phone_rows)} candidate records (shared line?)"
-        )
-        offer(phone_rows, confidence, "phone", detail)
+        # The key is the last 9 digits. That is what FINDS a number however
+        # it was written — +88, +880, 0, nothing — and for a Bangladeshi
+        # mobile it loses nothing, since every one starts 01. Whether a find
+        # is good enough to link on its own is then decided on the WHOLE
+        # number: a 9-digit tail is shared by numbers in different countries,
+        # and +91 97112 23344 is not the same person as 01711-223344.
+        rows = store.find_by_phone_key(identity.phone_key)
+        same_number = [r for r in rows if identity.phone in (r.get("phones") or [])]
+        exact_ids = {r.get("id") for r in same_number}
+
+        if len(same_number) == 1:
+            offer(same_number, CONF_PHONE, "phone",
+                  f"Same phone number — {identity.phone}")
+        elif same_number:
+            # A number held by two candidates is a shared line, not proof of
+            # identity. Still reported — below the auto-link bar, so a person
+            # decides.
+            offer(same_number, CONF_PHONE_SHARED, "phone",
+                  f"Phone {identity.phone} is on {len(same_number)} candidate "
+                  "records (shared line?)")
+
+        for row in rows:
+            if row.get("id") in exact_ids:
+                continue
+            theirs = next((p for p in row.get("phones") or []
+                           if phone_match_key(p) == identity.phone_key), "")
+            offer([row], CONF_PHONE_TAIL, "phone",
+                  f"Phone {identity.phone} ends in the same 9 digits as "
+                  f"{theirs or 'a number on file'}, but the country code differs "
+                  "— check it is the same number")
 
     if identity.name:
         offer(store.find_by_name_key(identity.name), CONF_NAME, "name",

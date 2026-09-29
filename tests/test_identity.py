@@ -106,20 +106,61 @@ class TestEmailIsTrackedForEveryProvider:
 
 
 # ── Phone ────────────────────────────────────────────────────────────
+BD_SPELLINGS = [
+    # national
+    "01711223344", "01711-223344", "01711 223344", "017-1122-3344",
+    "017 11 22 33 44", "(017) 1122-3344", "1711223344",
+    # +880
+    "+8801711223344", "+880 1711 223344", "+880-1711-223344",
+    "+880 (0) 1711223344", "+880 01711223344", "+ 880 1711 223344",
+    "(+880) 1711223344", "8801711223344", "880 1711 223344",
+    # the +88 habit: 880 split as 88 + the trunk 0
+    "+88 01711223344", "+88-01711-223344", "+88 017 1122 3344",
+    "+88 (017) 11223344", "88 01711223344", "(+88) 01711223344",
+    # ...and with that 0 dropped as well
+    "+88 1711223344", "88 1711223344",
+    # 00 international prefix
+    "008801711223344", "00880 1711 223344", "0088 01711223344",
+    # labels, extensions, second numbers
+    "Mobile: +88 01711223344", "Cell: 01711-223344 (personal)",
+    "01711223344 ext 5", "01711223344 / 01922334455", "01711223344, 01922334455",
+    # digits that are not ASCII
+    "০১৭১১২২৩৩৪৪",            # Bangla
+    "+৮৮০ ১৭১১ ২২৩৩৪৪",  # Bangla, +880
+    "０１７１１２２３３４４",            # full-width
+    "٠١٧١١٢٢٣٣٤٤",            # Arabic-Indic
+]
+
+
 class TestPhone:
-    @pytest.mark.parametrize(
-        "raw",
-        [
-            "01711223344", "01711-223344", "01711 223344", "+8801711223344",
-            "+880 1711 223344", "+880-1711-223344", "8801711223344",
-            "1711223344", "+880 (0) 1711223344", "00880 1711 223344",
-            "(017) 1122-3344", "+88 01711223344",
-        ],
-    )
+    @pytest.mark.parametrize("raw", BD_SPELLINGS)
     def test_every_bangladeshi_spelling_of_one_number_agrees(self, raw):
         # This is the case the app exists for: the same person writes their
         # number differently on two applications 18 months apart.
         assert phone_match_key(raw) == "711223344", f"{raw!r} broke the match"
+
+    @pytest.mark.parametrize("raw", BD_SPELLINGS)
+    def test_and_is_stored_as_the_same_number(self, raw):
+        # The key finding them is not enough: the stored number is what the
+        # drawer shows, and what decides whether a match links on its own.
+        assert normalize_phone(raw) == "+8801711223344", f"{raw!r} stored wrong"
+
+    @pytest.mark.parametrize(
+        "raw", ["01311223344", "01811223344", "01911223344", "01711223345"]
+    )
+    def test_the_last_9_digits_lose_nothing_for_a_bd_mobile(self, raw):
+        # Every BD mobile is 01X-XXXXXXXX, so the only digit the key drops is
+        # the 1 they all share: a different operator or subscriber digit is a
+        # different key.
+        assert phone_match_key(raw) != "711223344"
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [("+886 912 345 678", "+886912345678"),     # Taiwan
+         ("+882 1234 56789", "+882123456789")],     # international networks
+    )
+    def test_the_88_rule_leaves_other_88x_codes_alone(self, raw, expected):
+        assert normalize_phone(raw) == expected
 
     @pytest.mark.parametrize(
         "raw, region, expected",

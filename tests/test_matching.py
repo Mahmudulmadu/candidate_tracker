@@ -399,3 +399,102 @@ class TestStatusFilter:
         service.update_interview(interview["id"], karim["id"], {"status": "Internal"})
         assert store.list_candidates(status="NSOC") == []
         assert len(store.list_candidates(status="Internal")) == 3
+
+
+class TestPhoneMatching:
+    """Phone numbers are FOUND on the last 9 digits and LINKED on the whole number."""
+
+    @pytest.mark.parametrize(
+        "second",
+        ["+88 01711-223344", "+88 1711223344", "8801711223344", "1711223344",
+         "0088 01711223344",
+         "\u09e6\u09e7\u09ed\u09e7\u09e7\u09e8\u09e8\u09e9\u09e9\u09ea\u09ea"],
+    )
+    def test_any_spelling_of_the_same_bd_number_links(self, second):
+        first = record(name="Karim Hossain", email="karim@outlook.com", phone="01711-223344")
+        again = record(name="Someone Else", email="other@example.com", phone=second)
+        assert again["linkedTo"] == first["linkedTo"], f"{second!r} did not link"
+        assert again["candidate"]["interviewCount"] == 2
+
+    def test_a_bangla_digit_number_is_stored_in_ascii(self):
+        result = record(name="Karim Hossain",
+                        phone="\u09e6\u09e7\u09ed\u09e7\u09e7\u09e8\u09e8\u09e9\u09e9\u09ea\u09ea")
+        assert result["candidate"]["phones"] == ["+8801711223344"]
+        assert result["candidate"]["phoneKeys"] == ["711223344"]
+
+    def test_same_last_9_digits_in_another_country_is_only_a_possible_match(self):
+        """+91 97112 23344 shares its last 9 digits with 01711-223344.
+
+        That finds the Bangladeshi record — worth a look, since it could be
+        one person writing a number two ways — but it must never link two
+        different people on its own.
+        """
+        record(name="Karim Hossain", email="karim@outlook.com", phone="01711-223344")
+        result = service.check(dict(name="Ravi Kumar", phone="+91 97112 23344"))
+
+        assert result["isReturning"] is False
+        match = result["matches"][0]
+        assert match["signal"] == "phone"
+        assert match["confidence"] == 0.60
+        assert match["certain"] is False
+        assert "+8801711223344" in match["detail"]
+        assert "country code differs" in match["detail"]
+
+    def test_and_saving_it_starts_a_new_person(self):
+        record(name="Karim Hossain", email="karim@outlook.com", phone="01711-223344")
+        ravi = record(name="Ravi Kumar", email="ravi@example.in", phone="+91 97112 23344")
+        assert ravi["linkReason"] == "new candidate"
+        assert store.count_candidates() == 2
+
+    def test_an_exact_number_still_links_when_a_foreign_tail_twin_exists(self):
+        # Once the Indian number is on file too, the BD number's key finds
+        # two records — but only ONE holds the exact number. That is not a
+        # shared line, and the exact holder still links automatically.
+        karim = record(name="Karim Hossain", email="karim@outlook.com", phone="01711-223344")
+        record(name="Ravi Kumar", email="ravi@example.in", phone="+91 97112 23344")
+
+        again = record(name="K. Hossain", phone="+88 01711 223344")
+        assert again["linkedTo"] == karim["linkedTo"]
+
+    def test_the_shared_line_guard_counts_exact_holders(self):
+        # Two BD candidates on one desk phone: still a shared line, still asks.
+        record(name="Karim Hossain", email="karim@outlook.com", phone="01822556677")
+        service.record_interview(
+            dict(name="Farhana Akter", email="farhana@yahoo.com", phone="01822556677"),
+            force_new=True,
+        )
+        result = service.check(dict(name="Third", phone="+88 01822-556677"))
+        assert result["isReturning"] is False
+        assert {m["confidence"] for m in result["matches"]} == {0.50}
+
+
+class TestPhoneSearch:
+    """The search box finds a number typed the way the CV printed it."""
+
+    @pytest.fixture(autouse=True)
+    def people(self):
+        record(name="Mahmudul Hasan", email="mahmudul@example.com", phone="+880 1955-946392")
+        record(name="Karim Hossain", email="karim@outlook.com", phone="01711223344")
+
+    @pytest.mark.parametrize(
+        "typed",
+        ["01955-946392", "01955 946392", "+88 01955-946392", "+880 1955 946392",
+         "8801955946392", "(+88) 01955946392",
+         "\u09e6\u09e7\u09ef\u09eb\u09eb\u09ef\u09ea\u09ec\u09e9\u09ef\u09e8"],
+    )
+    def test_any_spelling_finds_the_candidate(self, typed):
+        names = [c["displayName"] for c in store.list_candidates(typed)]
+        assert names == ["Mahmudul Hasan"], f"{typed!r} found {names}"
+
+    def test_a_partial_number_still_works_as_a_substring(self):
+        assert [c["displayName"] for c in store.list_candidates("1955946")] == ["Mahmudul Hasan"]
+
+    @pytest.mark.parametrize("typed", ["mahmudul", "karim@outlook", "2024", "Engineer"])
+    def test_non_phone_searches_behave_as_before(self, typed):
+        # None of these is a phone number, so none gets the phone clause.
+        from app.store import _phone_search_key
+        assert _phone_search_key(typed) == ""
+
+    def test_phone_search_and_status_filter_combine(self):
+        assert store.list_candidates("+88 01955-946392", status="Selected") == []
+        assert len(store.list_candidates("+88 01955-946392", status="")) == 1

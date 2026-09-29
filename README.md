@@ -59,8 +59,9 @@ the existing person automatically or whether you are asked first.
 | Email | 1.00 | yes |
 | LinkedIn slug | 0.95 | yes |
 | GitHub handle | 0.95 | yes |
-| Phone (held by exactly one candidate) | 0.85 | yes |
-| Phone (held by several — a shared line) | 0.50 | no, asks |
+| Phone, the exact number, held by one candidate | 0.85 | yes |
+| Phone, same last 9 digits but a different country code | 0.60 | no, asks |
+| Phone, the exact number, held by several (a shared line) | 0.50 | no, asks |
 | Name only | 0.40 | **never** |
 
 The threshold is `IDENTITY_AUTO_LINK_MIN_CONFIDENCE` in `.env`, default 0.85.
@@ -78,9 +79,21 @@ What normalization actually does:
   Gmail only (other providers treat them as significant), `googlemail.com`
   folded to `gmail.com`.
 - **Phone** — parsed to E.164 assuming Bangladesh when no country code is
-  given (`IDENTITY_DEFAULT_PHONE_REGION`), then matched on the **last 9
-  digits**, so `01711223344` and `+8801711223344` agree. A field holding two
-  numbers (`01768438600,01992460122`) takes the first.
+  given (`IDENTITY_DEFAULT_PHONE_REGION`), then **found on the last 9
+  digits** and **linked on the whole number**.
+  - Every way a Bangladeshi number gets written — `01711-223344`,
+    `+880 1711 223344`, `+88 01711223344`, `+88 1711223344` with the 0
+    dropped, `0088…`, no prefix at all — comes out as `+8801711223344`.
+  - Bangla, full-width and Arabic-Indic digits (`০১৭১১২২৩৩৪৪`) are read as
+    the digits they are; left as they were, they could never match a number
+    typed in ASCII.
+  - The last 9 digits lose nothing for a Bangladeshi mobile: every one is
+    `01X-XXXXXXXX`, so the only digit dropped is the 1 they all share.
+  - Across countries they are not unique — `+91 97112 23344` ends like
+    `01711-223344`. So a tail match is shown as a possible match, and only
+    the exact same number links automatically.
+  - A field holding two numbers (`01768438600,01992460122`) takes the first.
+- **Search** finds a phone number typed any of those ways, too.
 - **Name** — accents folded, honorifics (`Md.`, `Dr.`) and qualifications
   (`PhD`, `BSc`) dropped, middle initials discarded, then token-sorted, so
   "Rahman, Ayesha" and "Md. Ayesha Rahman" produce the same key.

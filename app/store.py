@@ -23,10 +23,12 @@ it can serve the page that would explain why.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from typing import Any
 
 from app.config import settings
+from app.identity import phone_match_key
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +385,24 @@ def _upsert(sql: str, doc: dict, mapping: dict[str, str], label: str) -> dict:
         raise StoreError(f"Could not save the {label}. {exc}") from exc
 
 
+# Digits and the punctuation phone numbers are written with, and nothing else.
+_PHONEISH = re.compile(r"^[\d\s+\-().]+$")
+
+
+def _phone_search_key(search: str) -> str:
+    """The match key for a search that is a phone number, else "".
+
+    Stored numbers are in one form (+8801711223344), so a plain substring
+    search only finds a number typed exactly that way. People type it the way
+    the CV printed it — "+88 01711-223344", "01711 223344", in Bangla digits —
+    and every one of those shares a match key with the stored number. ``\\d``
+    matches Bangla digits too, and phone_match_key converts them.
+    """
+    if not _PHONEISH.match(search.strip()):
+        return ""
+    return phone_match_key(search)
+
+
 def _like(term: str) -> str:
     r"""A substring pattern with the user's own %, _ and \ taken literally."""
     escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -455,11 +475,16 @@ def _candidate_filters(search: str = "", status: str = "") -> tuple[str, list[An
     params: list[Any] = []
     if search:
         pattern = _like(search.lower())
-        clauses.append(
+        clause = (
             "(lower(display_name) LIKE %s ESCAPE '\\' "
-            "OR lower(search_blob) LIKE %s ESCAPE '\\')"
+            "OR lower(search_blob) LIKE %s ESCAPE '\\'"
         )
         params += [pattern, pattern]
+        phone_key = _phone_search_key(search)
+        if phone_key:
+            clause += " OR phone_keys @> ARRAY[%s]::text[]"
+            params.append(phone_key)
+        clauses.append(clause + ")")
     if status:
         clauses.append("last_status = %s")
         params.append(status)
