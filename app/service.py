@@ -165,7 +165,7 @@ INTERVIEW_FIELDS = (
 
 STATUSES = (
     "Applied", "Interviewing", "On Hold", "Selected", "Rejected", "Offer Sent",
-    "Joined", "Declined", "No Show",
+    "Joined", "Declined", "No Show", "NSOC", "Internal",
 )
 
 

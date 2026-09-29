@@ -339,3 +339,63 @@ class TestSearch:
     def test_sql_wildcards_are_taken_literally(self, term):
         # "%" must mean the character, not "match everything".
         assert store.list_candidates(term) == []
+
+
+class TestStatusFilter:
+    """The candidate list's status chips filter on the LATEST status."""
+
+    @pytest.fixture(autouse=True)
+    def people(self):
+        record(name="Ayesha Rahman", email="ayesha@gmail.com", status="Rejected",
+               position="Backend Engineer", interviewDateTime="2024-01-05T10:00:00+00:00")
+        # Ayesha again, later: her latest status is now Selected.
+        record(name="Ayesha Rahman", email="ayesha@gmail.com", status="Selected",
+               position="Senior Backend Engineer",
+               interviewDateTime="2026-09-01T10:00:00+00:00")
+        record(name="Karim Hossain", email="karim@outlook.com", status="NSOC")
+        record(name="Farhana Akter", email="farhana@yahoo.com", status="Internal")
+        record(name="Tanvir Islam", email="tanvir@example.com", status="Internal")
+        record(name="No Status Yet", email="nostatus@example.com")
+
+    @pytest.mark.parametrize(
+        "status, expected",
+        [("Selected", ["Ayesha Rahman"]),
+         ("NSOC", ["Karim Hossain"]),
+         ("Internal", ["Farhana Akter", "Tanvir Islam"]),
+         ("Joined", [])],
+    )
+    def test_filters_by_status(self, status, expected):
+        names = sorted(c["displayName"] for c in store.list_candidates(status=status))
+        assert names == expected
+
+    def test_an_old_status_does_not_bring_someone_back(self):
+        # Ayesha WAS rejected in 2024, but is Selected now.
+        assert store.list_candidates(status="Rejected") == []
+
+    def test_no_filter_means_everyone(self):
+        assert len(store.list_candidates()) == 5
+        assert len(store.list_candidates(status="")) == 5
+
+    def test_status_and_search_combine(self):
+        assert [c["displayName"] for c in
+                store.list_candidates("farhana", status="Internal")] == ["Farhana Akter"]
+        assert store.list_candidates("karim", status="Internal") == []
+
+    def test_counts_per_status(self):
+        counts = store.count_candidates_by_status()
+        assert counts["Selected"] == 1
+        assert counts["NSOC"] == 1
+        assert counts["Internal"] == 2
+        assert counts[""] == 1                 # no status yet, still counted
+        assert "Rejected" not in counts        # nobody's LATEST status
+        assert sum(counts.values()) == 5
+
+    def test_counts_respect_the_search(self):
+        assert store.count_candidates_by_status("farhana") == {"Internal": 1}
+
+    def test_a_status_edit_moves_the_candidate_between_filters(self):
+        karim = store.list_candidates(status="NSOC")[0]
+        interview = store.list_interviews_for(karim["id"])[0]
+        service.update_interview(interview["id"], karim["id"], {"status": "Internal"})
+        assert store.list_candidates(status="NSOC") == []
+        assert len(store.list_candidates(status="Internal")) == 3

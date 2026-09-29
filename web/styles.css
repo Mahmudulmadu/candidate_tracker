@@ -14,6 +14,7 @@
   --warn:    #f59e0b;  --warn-bg:  rgba(245, 158, 11, .12);
   --danger:  #ef4444;  --danger-bg:rgba(239, 68, 68, .12);
   --info:    #0ea5e9;  --info-bg:  rgba(14, 165, 233, .12);
+  --violet:  #8b5cf6;
 
   --radius:    14px;
   --radius-sm: 9px;
@@ -465,6 +466,26 @@ input[type="datetime-local"] { font-family: var(--mono); font-size: 12.5px; }
   background: var(--surface-3); color: var(--text-dim); border-color: var(--border);
 }
 
+/* Each status's colour, set once as --tone. The filter dots read it; so do
+   the badges for the statuses added later, which is why NSOC and Internal
+   need one line each here and nothing more.
+
+   Their colours are violet and blue on purpose — neither green, amber nor
+   red — because neither is a verdict on the candidate, and borrowing a
+   good/bad colour would say one. */
+.s-selected, .s-joined, .s-offer-sent { --tone: var(--ok); }
+.s-rejected, .s-declined, .s-no-show  { --tone: var(--danger); }
+.s-on-hold, .s-interviewing           { --tone: var(--warn); }
+.s-applied, .s-                       { --tone: var(--text-faint); }
+.s-nsoc                               { --tone: var(--violet); }
+.s-internal                           { --tone: var(--info); }
+
+.badge.s-nsoc, .badge.s-internal {
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  color: var(--tone);
+  border-color: color-mix(in srgb, var(--tone) 30%, transparent);
+}
+
 .mini-tag {
   padding: 2.5px 8px; border-radius: 6px;
   background: var(--surface-3); border: 1px solid var(--border-soft);
@@ -491,6 +512,42 @@ input[type="datetime-local"] { font-family: var(--mono); font-size: 12.5px; }
   width: 15px; height: 15px; color: var(--text-faint); pointer-events: none;
 }
 .search-wrap input { padding-left: 36px; height: 42px; border-radius: var(--radius); }
+
+/* ── Status filter ── */
+.status-filter {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  margin: -4px 0 18px;
+}
+.fchip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 5px 4px 11px; border-radius: 99px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+  font: 500 12px var(--font); color: var(--text-dim);
+  transition: all .16s var(--ease);
+}
+.fchip:hover { border-color: var(--text-faint); color: var(--text); }
+.fchip b {
+  min-width: 22px; padding: 1px 7px; border-radius: 99px; text-align: center;
+  font: 600 10.5px var(--mono); font-variant-numeric: tabular-nums;
+  background: var(--surface-3); color: var(--text-dim);
+}
+.fdot {
+  width: 7px; height: 7px; border-radius: 99px; flex-shrink: 0;
+  background: var(--tone, var(--text-faint));
+}
+/* Zero, but still there: every status stays visible and clickable. */
+.fchip.is-empty:not(.is-on) { opacity: .5; }
+.fchip.is-empty:not(.is-on):hover { opacity: .85; }
+
+.fchip.is-on {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  box-shadow: 0 2px 10px var(--accent-glow);
+  animation: chip-pick .32s cubic-bezier(.34, 1.56, .64, 1);
+}
+.fchip.is-on b { background: rgba(255, 255, 255, .22); color: #fff; }
+.fchip.is-on .fdot { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .9); }
+
+.empty-state .ghost-btn, .empty-state .primary-btn { margin-top: 16px; }
 
 .people-list { display: grid; gap: 10px; }
 .person {

@@ -15,6 +15,8 @@ const state = {
   statuses: [],
   threshold: 0.85,   // auto-link bar, from /api/meta
   people: [],
+  statusFilter: '',     // the candidate list's status chip; '' = all
+  statusCounts: {},     // status -> candidates, within the current search
   records: {},          // interview id -> the record as last loaded, for diffing
 };
 
@@ -166,13 +168,12 @@ $('#themeToggle').onclick = () => {
 };
 
 // ═══════════════ NAV ═══════════════
-$$('.tab').forEach((tab) => {
-  tab.onclick = () => {
-    $$('.tab').forEach((t) => t.classList.toggle('is-active', t === tab));
-    $$('.view').forEach((v) => v.classList.toggle('is-active', v.id === `view-${tab.dataset.view}`));
-    if (tab.dataset.view === 'people') loadPeople();
-  };
-});
+function showView(name) {
+  $$('.tab').forEach((t) => t.classList.toggle('is-active', t.dataset.view === name));
+  $$('.view').forEach((v) => v.classList.toggle('is-active', v.id === `view-${name}`));
+  if (name === 'people') loadPeople();
+}
+$$('.tab').forEach((tab) => { tab.onclick = () => showView(tab.dataset.view); });
 
 // ═══════════════ BOOT ═══════════════
 (async function boot() {
@@ -201,6 +202,9 @@ $$('.tab').forEach((tab) => {
   } catch { /* the form still works without the chip row */ }
 
   refreshCounts();
+  // The candidate list is the landing page. Loaded after /api/meta so the
+  // filter row already knows every status, including ones nobody holds yet.
+  loadPeople();
 })();
 
 async function refreshCounts() {
@@ -690,29 +694,107 @@ function resetForm() {
 let searchTimer = null;
 $('#search').addEventListener('input', () => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => loadPeople($('#search').value), 280);
+  searchTimer = setTimeout(loadPeople, 280);
 });
 
-async function loadPeople(search = '') {
+/* Reads the search box and the status filter itself, so every caller — a tab
+   click, a keystroke, a chip, a save in the drawer — reloads the list the
+   user is actually looking at rather than quietly dropping one of the two. */
+let peopleSeq = 0;
+async function loadPeople() {
   const list = $('#peopleList');
+  const search = $('#search').value.trim();
+  const status = state.statusFilter;
+  const seq = ++peopleSeq;
+
+  let data;
   try {
-    const data = await api(`/api/candidates?search=${encodeURIComponent(search)}`);
-    state.people = data.candidates || [];
+    data = await api(`/api/candidates?${new URLSearchParams({ search, status })}`);
   } catch (err) {
     list.innerHTML = `<div class="empty-state"><strong>Could not load candidates</strong><p>${esc(err.message)}</p></div>`;
     return;
   }
+  // Typing and clicking chips both fire requests; a slow early answer must
+  // not overwrite a newer one.
+  if (seq !== peopleSeq) return;
+
+  state.people = data.candidates || [];
+  state.statusCounts = data.statusCounts || {};
+  renderStatusFilter();
 
   if (!state.people.length) {
-    list.innerHTML = search
-      ? `<div class="empty-state"><strong>Nobody matches “${esc(search)}”</strong><p>Try an email, a phone number or part of a name.</p></div>`
-      : `<div class="empty-state"><strong>No candidates yet</strong><p>Record your first interview and they will show up here.</p></div>`;
+    list.innerHTML = emptyPeopleHTML(search, status);
+    $('[data-go="record"]', list)?.addEventListener('click', () => showView('record'));
+    $('[data-go="all"]', list)?.addEventListener('click', () => {
+      state.statusFilter = '';
+      loadPeople();
+    });
     return;
   }
 
   list.innerHTML = state.people.map(personRow).join('');
   $$('.person', list).forEach((row) => {
     row.onclick = () => openDrawer(row.dataset.cid);
+  });
+}
+
+function emptyPeopleHTML(search, status) {
+  const box = (title, body, action = '') =>
+    `<div class="empty-state"><strong>${title}</strong><p>${body}</p>${action}</div>`;
+
+  if (status && search) {
+    return box(`Nobody matching “${esc(search)}” is at ${esc(status)}`,
+      'Their latest application may have a different status.',
+      '<button type="button" class="ghost-btn" data-go="all">Show every status</button>');
+  }
+  if (status) {
+    return box(`No candidates are at ${esc(status)}`,
+      'The filter goes by each candidate’s latest application.',
+      '<button type="button" class="ghost-btn" data-go="all">Show every status</button>');
+  }
+  if (search) {
+    return box(`Nobody matches “${esc(search)}”`,
+      'Try an email, a phone number or part of a name.');
+  }
+  // The landing page on a fresh install, so say how to get past it.
+  return box('No candidates yet',
+    'Record your first interview and they will show up here.',
+    '<button type="button" class="primary-btn" data-go="record"><span class="btn-label">New interview</span></button>');
+}
+
+/* ── Status filter ────────────────────────────────────────────────────
+   One chip per status with its count. Every status is shown even at zero —
+   dimmed rather than hidden — so the full set of statuses is visible and a
+   chip does not appear and disappear as the search changes.               */
+function renderStatusFilter() {
+  const box = $('#statusFilter');
+  const counts = state.statusCounts;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  // The server's statuses in their own order, then any still on a record
+  // but no longer offered — so an old status stays findable.
+  const names = [
+    ...state.statuses,
+    ...Object.keys(counts).filter((s) => s && !state.statuses.includes(s)),
+  ];
+
+  const chip = (value, label, n) => {
+    const on = state.statusFilter === value;
+    return `
+      <button type="button" class="fchip ${on ? 'is-on' : ''} ${n ? '' : 'is-empty'}"
+              data-v="${esc(value)}" aria-pressed="${on}">
+        ${value ? `<span class="fdot s-${slug(value)}"></span>` : ''}
+        <span>${esc(label)}</span><b>${n}</b>
+      </button>`;
+  };
+
+  box.innerHTML = chip('', 'All', total) + names.map((s) => chip(s, s, counts[s] || 0)).join('');
+  $$('.fchip', box).forEach((btn) => {
+    btn.onclick = () => {
+      const value = btn.dataset.v;
+      // Clicking the active chip again clears it, the way a toggle should.
+      state.statusFilter = state.statusFilter === value ? '' : value;
+      loadPeople();
+    };
   });
 }
 
@@ -860,7 +942,7 @@ async function deleteRecord(rec, id) {
       await openDrawer(r.candidateId, { keepScroll: true });
     }
     refreshCounts();
-    if ($('#view-people').classList.contains('is-active')) loadPeople($('#search').value);
+    if ($('#view-people').classList.contains('is-active')) loadPeople();
   } catch (err) {
     toast(err.message, 'bad', { title: 'Could not delete' });
     btn.disabled = false;
@@ -920,7 +1002,7 @@ async function saveEdit(rec, id) {
           'ok', { title: 'Interview updated' });
     await openDrawer(original.candidateId, { openRecordId: id, keepScroll: true });
     refreshCounts();
-    if ($('#view-people').classList.contains('is-active')) loadPeople($('#search').value);
+    if ($('#view-people').classList.contains('is-active')) loadPeople();
   } catch (err) {
     toast(err.message, 'bad', { title: 'Could not save' });
     btn.disabled = false;

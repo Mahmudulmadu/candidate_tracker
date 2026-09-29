@@ -257,7 +257,7 @@ The UI is a client of this; nothing is hidden from it.
 | `GET` | `/api/cv/{name}` | download a stored CV |
 | `POST` | `/api/interviews` | record an interview |
 | `DELETE` | `/api/interviews/{id}?candidateId=…` | remove one |
-| `GET` | `/api/candidates?search=` | list / search people |
+| `GET` | `/api/candidates?search=&status=` | list / search people, optionally by latest status; includes per-status counts |
 | `GET` | `/api/candidates/{id}` | one person + full history |
 
 Interactive docs at `/docs`.

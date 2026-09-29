@@ -207,3 +207,40 @@ class TestUploadedCvsAreIsolated:
                              files={"file": ("resume.txt", b"Farhana Akter\nc@d.com", "text/plain")}).json()
         assert first["cv"]["storedName"] != second["cv"]["storedName"]
         assert "Farhana" in client.get(second["cv"]["url"]).text
+
+
+class TestStatuses:
+    def test_nsoc_and_internal_are_offered(self, client):
+        statuses = client.get("/api/meta").json()["statuses"]
+        assert "NSOC" in statuses
+        assert "Internal" in statuses
+
+    def test_a_new_status_can_be_saved_and_filtered_on(self, client):
+        save(client, name="Karim Hossain", email="karim@outlook.com", status="NSOC")
+        save(client, name="Farhana Akter", email="farhana@yahoo.com", status="Internal")
+
+        body = client.get("/api/candidates", params={"status": "NSOC"}).json()
+        assert [c["displayName"] for c in body["candidates"]] == ["Karim Hossain"]
+        assert body["candidates"][0]["lastStatus"] == "NSOC"
+
+    def test_the_list_carries_counts_for_the_filter_chips(self, client):
+        save(client, name="Karim Hossain", email="karim@outlook.com", status="NSOC")
+        save(client, name="Farhana Akter", email="farhana@yahoo.com", status="Internal")
+        save(client, name="Tanvir Islam", email="tanvir@example.com", status="Internal")
+
+        # Filtered to NSOC — but the counts still cover every status, or the
+        # other chips would all read 0 the moment one is picked.
+        body = client.get("/api/candidates", params={"status": "NSOC"}).json()
+        assert len(body["candidates"]) == 1
+        assert body["statusCounts"] == {"NSOC": 1, "Internal": 2}
+
+    def test_counts_follow_the_search(self, client):
+        save(client, name="Karim Hossain", email="karim@outlook.com", status="NSOC")
+        save(client, name="Farhana Akter", email="farhana@yahoo.com", status="Internal")
+        body = client.get("/api/candidates", params={"search": "farhana"}).json()
+        assert body["statusCounts"] == {"Internal": 1}
+
+    def test_whitespace_around_the_status_is_ignored(self, client):
+        save(client, name="Karim Hossain", email="karim@outlook.com", status="NSOC")
+        body = client.get("/api/candidates", params={"status": "  NSOC  "}).json()
+        assert len(body["candidates"]) == 1
