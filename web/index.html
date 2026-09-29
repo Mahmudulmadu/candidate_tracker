@@ -28,15 +28,17 @@
       </div>
     </div>
 
+    <!-- Candidates first: the list is the landing page, and the tab you land
+         on should be the leftmost one. -->
     <nav class="tabs" role="tablist">
-      <button class="tab is-active" data-view="record" role="tab">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        New Interview
-      </button>
-      <button class="tab" data-view="people" role="tab">
+      <button class="tab is-active" data-view="people" role="tab">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Candidates
         <span class="tab-count" id="tabCount"></span>
+      </button>
+      <button class="tab" data-view="record" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        New Interview
       </button>
     </nav>
 
@@ -54,7 +56,7 @@
 
 <main>
 <!-- ══════════════ RECORD VIEW ══════════════ -->
-<section class="view is-active" id="view-record">
+<section class="view" id="view-record">
   <div class="record-grid">
 
     <!-- ── Form column ── -->
@@ -203,7 +205,7 @@
 </section>
 
 <!-- ══════════════ PEOPLE VIEW ══════════════ -->
-<section class="view" id="view-people">
+<section class="view is-active" id="view-people">
   <div class="people-head">
     <div class="stats" id="stats"></div>
     <div class="search-wrap">
@@ -211,6 +213,8 @@
       <input id="search" placeholder="Search by name, email, phone or profile…">
     </div>
   </div>
+  <!-- Filled by app.js: "All" plus one chip per status, each with a count. -->
+  <div class="status-filter" id="statusFilter" role="group" aria-label="Filter by status"></div>
   <div class="people-list" id="peopleList"></div>
 </section>
 </main>

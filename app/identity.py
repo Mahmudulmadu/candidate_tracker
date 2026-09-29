@@ -157,6 +157,21 @@ def _best_effort_e164(digits: str) -> str:
 _PHONE_SEPARATORS = re.compile(r"\s*(?:[,;|/]|\bor\b|\band\b)\s*", re.IGNORECASE)
 
 
+def _ascii_digits(text: str) -> str:
+    """Every Unicode decimal digit rewritten as its ASCII 0-9.
+
+    An interviewer with a Bangla keyboard types ০১৭১১২২৩৩৪৪, and text pasted
+    from some editors carries full-width ０１７…. They are digits to a reader
+    and to ``re``'s ``\\d``, but "৭" is not "7" to a string comparison: left
+    alone they produce a match key no ASCII-typed number can ever equal, and
+    the returning candidate quietly becomes a duplicate.
+    """
+    return "".join(
+        str(unicodedata.decimal(ch)) if ch.isdecimal() and not ch.isascii() else ch
+        for ch in text
+    )
+
+
 def normalize_phone(raw: str | None, default_region: str = DEFAULT_PHONE_REGION) -> str:
     """Normalize a phone number to E.164, assuming ``default_region`` when it
     carries no country code. Returns "" when the input cannot be a phone at all.
@@ -165,11 +180,15 @@ def normalize_phone(raw: str | None, default_region: str = DEFAULT_PHONE_REGION)
     '+8801711223344'
     >>> normalize_phone("+880 1711 223344")
     '+8801711223344'
+    >>> normalize_phone("+88 01711-223344")
+    '+8801711223344'
+    >>> normalize_phone("+88 1711-223344")
+    '+8801711223344'
     """
     if not raw:
         return ""
 
-    text = str(raw).strip()
+    text = _ascii_digits(str(raw).strip())
     # An extension ("... ext. 42") is not part of the identity.
     text = re.split(r"(?i)\b(?:ext|x|extn)\b\.?\s*\d+$", text)[0]
 
@@ -197,6 +216,18 @@ def _normalize_one_phone(text: str, default_region: str) -> str:
         # 00 is the international access prefix in most of the world.
         is_international = True
         digits = digits[2:]
+
+    # "+88 01711-223344" is how Bangladeshi numbers are usually written: 880
+    # split as "88" plus the national trunk 0, which happens to give the right
+    # digits. Drop that 0 as well — "+88 1711-223344" — and the digits read as
+    # +881, the satellite-phone code, which is what got stored and displayed.
+    # Ten digits starting with 1 after the 88 is the shape of a BD mobile, so
+    # read it as one. Taiwan (+886) and the +882/+883 networks never have that
+    # shape; an Iridium satphone (+8816…) would, and nobody applies with one.
+    if digits.startswith("88") and not digits.startswith("880"):
+        rest = digits[2:]
+        if len(rest) == 10 and rest.startswith("1"):
+            return f"+880{rest}"
 
     if is_international:
         return _best_effort_e164(digits)

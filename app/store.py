@@ -23,10 +23,12 @@ it can serve the page that would explain why.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from typing import Any
 
 from app.config import settings
+from app.identity import phone_match_key
 
 logger = logging.getLogger(__name__)
 
@@ -130,6 +132,8 @@ CREATE INDEX IF NOT EXISTS candidates_linkedins_idx  ON candidates USING gin (li
 CREATE INDEX IF NOT EXISTS candidates_githubs_idx    ON candidates USING gin (githubs);
 CREATE INDEX IF NOT EXISTS candidates_name_key_idx   ON candidates (name_key);
 CREATE INDEX IF NOT EXISTS candidates_recent_idx     ON candidates (last_interview_at DESC);
+-- The candidate list's status filter.
+CREATE INDEX IF NOT EXISTS candidates_status_idx     ON candidates (last_status);
 
 CREATE TABLE IF NOT EXISTS interviews (
     id                 text    PRIMARY KEY,
@@ -381,6 +385,24 @@ def _upsert(sql: str, doc: dict, mapping: dict[str, str], label: str) -> dict:
         raise StoreError(f"Could not save the {label}. {exc}") from exc
 
 
+# Digits and the punctuation phone numbers are written with, and nothing else.
+_PHONEISH = re.compile(r"^[\d\s+\-().]+$")
+
+
+def _phone_search_key(search: str) -> str:
+    """The match key for a search that is a phone number, else "".
+
+    Stored numbers are in one form (+8801711223344), so a plain substring
+    search only finds a number typed exactly that way. People type it the way
+    the CV printed it — "+88 01711-223344", "01711 223344", in Bangla digits —
+    and every one of those shares a match key with the stored number. ``\\d``
+    matches Bangla digits too, and phone_match_key converts them.
+    """
+    if not _PHONEISH.match(search.strip()):
+        return ""
+    return phone_match_key(search)
+
+
 def _like(term: str) -> str:
     r"""A substring pattern with the user's own %, _ and \ taken literally."""
     escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -438,28 +460,69 @@ def find_by_name_key(name_key: str) -> list[dict]:
     )
 
 
-def list_candidates(search: str = "", limit: int = 200) -> list[dict]:
-    """Every candidate, newest activity first, optionally filtered.
+def _candidate_filters(search: str = "", status: str = "") -> tuple[str, list[Any]]:
+    """The WHERE clause for the candidate list's search box and status filter.
 
     The search is a substring over the display name and the raw contact fields
     — whoever is looking for "ayesha" should not have to know how the matcher
     normalizes it.
+
+    The status is the candidate's LATEST one: the badge the list shows. Someone
+    rejected in 2024 and selected this year is "Selected", and filtering on
+    "Rejected" should not bring them back.
     """
-    where = ""
+    clauses: list[str] = []
     params: list[Any] = []
     if search:
         pattern = _like(search.lower())
-        where = (
-            "WHERE (lower(display_name) LIKE %s ESCAPE '\\' "
-            "OR lower(search_blob) LIKE %s ESCAPE '\\') "
+        clause = (
+            "(lower(display_name) LIKE %s ESCAPE '\\' "
+            "OR lower(search_blob) LIKE %s ESCAPE '\\'"
         )
         params += [pattern, pattern]
+        phone_key = _phone_search_key(search)
+        if phone_key:
+            clause += " OR phone_keys @> ARRAY[%s]::text[]"
+            params.append(phone_key)
+        clauses.append(clause + ")")
+    if status:
+        clauses.append("last_status = %s")
+        params.append(status)
+    where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
+    return where, params
+
+
+def list_candidates(search: str = "", limit: int = 200, status: str = "") -> list[dict]:
+    """Every candidate, newest activity first, optionally filtered."""
+    where, params = _candidate_filters(search, status)
     params.append(int(limit))
     return _query(
         f"SELECT * FROM candidates {where}ORDER BY last_interview_at DESC LIMIT %s",
         params,
         mapping=CANDIDATE_MAP,
     )
+
+
+def count_candidates_by_status(search: str = "") -> dict[str, int]:
+    """How many candidates are at each status, within the current search.
+
+    These are the numbers on the filter chips, so the status filter itself is
+    deliberately NOT applied: counting only the chosen status would make every
+    other chip read 0 the moment one is picked. Candidates with no status come
+    back under "" and still count towards the total.
+    """
+    where, params = _candidate_filters(search)
+    try:
+        with _get_pool().connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"SELECT last_status AS status, count(*) AS n FROM candidates {where}"
+                "GROUP BY last_status",
+                params,
+            )
+            return {row["status"]: int(row["n"]) for row in cur.fetchall()}
+    except Exception:
+        logger.exception("Status count failed.")
+        return {}
 
 
 def list_demo_candidates() -> list[dict]:

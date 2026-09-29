@@ -180,9 +180,18 @@ def create_interview(payload: dict):
 
 
 @app.get("/api/candidates")
-def list_candidates(search: str = "", limit: int = 200):
-    rows = store.list_candidates(search.strip(), limit=min(max(limit, 1), 500))
-    return {"candidates": [service.public_candidate(r) for r in rows]}
+def list_candidates(search: str = "", status: str = "", limit: int = 200):
+    """List people, optionally narrowed by search text and latest status.
+
+    ``statusCounts`` are the numbers on the filter chips: per status, within
+    the current search but ignoring the status filter itself.
+    """
+    search, status = search.strip(), status.strip()
+    rows = store.list_candidates(search, limit=min(max(limit, 1), 500), status=status)
+    return {
+        "candidates": [service.public_candidate(r) for r in rows],
+        "statusCounts": store.count_candidates_by_status(search),
+    }
 
 
 @app.get("/api/candidates/{candidate_id}")
