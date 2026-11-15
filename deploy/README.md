@@ -1,13 +1,13 @@
 # Deploying to the office server
 
-The target is the `resume-filter` VM (Proxmox VM 104) at **192.168.1.7**.
+The target is the `resume-filter` VM (Proxmox VM 104) at **192.168.1.41**.
 Everything lives on that one machine — application, database and uploaded CVs
 — so a VM snapshot is a complete backup and nothing else has to be switched
 on for the tracker to work.
 
 ```
           browser on the office LAN
-                    │  http://192.168.1.7
+                    │  http://192.168.1.41
                     ▼
    ┌──────────────────────────────────────────┐
    │ resume-filter VM (Ubuntu)                │
@@ -40,10 +40,10 @@ Then, from a machine holding this repository:
 # On Linux or macOS either works.
 tar czf - --exclude='./.venv' --exclude='./data' --exclude='./.git' \
           --exclude='__pycache__' --exclude='./.pytest_cache' --exclude='./.env' . \
-  | ssh madu@192.168.1.7 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
+  | ssh madu@192.168.1.41 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
                           && tar xzf - -C /tmp/resume-filter-src"
 
-ssh madu@192.168.1.7 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
+ssh madu@192.168.1.41 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
 ```
 
 The installer prints the URL when it has finished, and fails loudly if the
@@ -74,10 +74,10 @@ its dependencies.
 # On Linux or macOS either works.
 tar czf - --exclude='./.venv' --exclude='./data' --exclude='./.git' \
           --exclude='__pycache__' --exclude='./.pytest_cache' --exclude='./.env' . \
-  | ssh madu@192.168.1.7 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
+  | ssh madu@192.168.1.41 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
                           && tar xzf - -C /tmp/resume-filter-src"
 
-ssh madu@192.168.1.7 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
+ssh madu@192.168.1.41 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
 ```
 
 ## Running it
@@ -126,7 +126,18 @@ the dumps are for when you want a copy off the machine.
 
 ## Things worth knowing
 
-**There is no login.** Anyone who can reach 192.168.1.7 can read every
+**The address is fixed on the VM itself.** It used to come from the router's
+DHCP, and after a restart the VM came back on a different address while
+another device took the old one (192.168.1.7). Since 2026-11-15
+`/etc/netplan/99-static-ip.yaml` turns DHCP off for `ens18` and pins
+192.168.1.41; it overrides `00-installer-config.yaml`, which is left as the
+installer wrote it. The router does not know about this, so **192.168.1.41
+should be excluded from its DHCP pool** — otherwise it can hand the address
+to something else while the VM is off. (The VM's MAC, if the router wants it:
+`bc:24:11:6b:61:f3`.) To change the address, edit that file and run
+`sudo netplan try`, which rolls back by itself unless you confirm.
+
+**There is no login.** Anyone who can reach 192.168.1.41 can read every
 candidate record and download every CV. That is the same trade-off the app
 has always made, but it matters more now that it is on an always-on server
 rather than somebody's desktop. Keep the VM off any port forward, and if the

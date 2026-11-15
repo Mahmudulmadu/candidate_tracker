@@ -177,7 +177,7 @@ notice period, position, note, three rounds of feedback, status, and the CV
 
 ## Deploying to the office server
 
-Runs on the `resume-filter` VM at **192.168.1.7** — nginx on port 80 in front
+Runs on the `resume-filter` VM at **192.168.1.41** — nginx on port 80 in front
 of uvicorn on loopback, with PostgreSQL and the uploaded CVs on the same
 machine, so a VM snapshot is a complete backup.
 
@@ -186,10 +186,10 @@ machine, so a VM snapshot is a complete backup.
 # On Linux or macOS either works.
 tar czf - --exclude='./.venv' --exclude='./data' --exclude='./.git' \
           --exclude='__pycache__' --exclude='./.pytest_cache' --exclude='./.env' . \
-  | ssh madu@192.168.1.7 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
+  | ssh madu@192.168.1.41 "rm -rf /tmp/resume-filter-src && mkdir -p /tmp/resume-filter-src \
                           && tar xzf - -C /tmp/resume-filter-src"
 
-ssh madu@192.168.1.7 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
+ssh madu@192.168.1.41 "sudo bash /tmp/resume-filter-src/deploy/install.sh"
 ```
 
 The same two commands upgrade an existing install: `deploy/install.sh` is
